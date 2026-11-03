@@ -11,6 +11,7 @@ import sys
 import os
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -35,6 +36,7 @@ DISTRICT_ID = 25          # Юнусабадский район
 PRICE_MIN = None          # например 300  (в валюте объявления)
 PRICE_MAX = None          # например 700
 ROOMS = None              # например {1, 2} или None = любые
+MAX_AGE_HOURS = 24        # старее — не слать (отсекает старые поднятые объявления). None = выкл
 KEYWORDS_EXCLUDE = ["офис", "ofis", "нежил", "noturar"]  # отсекать мусор по заголовку
 
 INTERVAL = 20             # сек между проверками (меньше 10 — риск бана от OLX)
@@ -90,7 +92,17 @@ def fetch_ads():
     return ads
 
 
+def age_hours(ad):
+    try:
+        t = datetime.fromisoformat(ad.get("created_time", ""))
+        return (datetime.now(timezone.utc) - t).total_seconds() / 3600
+    except Exception:
+        return 0
+
+
 def passes(ad) -> bool:
+    if MAX_AGE_HOURS is not None and age_hours(ad) > MAX_AGE_HOURS:
+        return False
     title = ad.get("title", "").lower()
     if any(k in title for k in KEYWORDS_EXCLUDE):
         return False
@@ -132,8 +144,8 @@ def fmt(ad) -> str:
     floors = param(ad, "total_floors").get("label", "?")
     furn = param(ad, "furnished").get("label", "")
     com = param(ad, "comission").get("label", "")
-    phones = find_phones(ad.get("title", "") + " " + ad.get("description", ""))
     seller = (ad.get("contact") or {}).get("name") or (ad.get("user") or {}).get("name") or ""
+    phones = find_phones(" ".join([ad.get("title", ""), ad.get("description", ""), seller]))
     contact = ("📞 " + ", ".join(phones)) if phones else "📞 номер скрыт — кнопка «Показать телефон» на OLX"
     return (
         f"🏠 <b>{ad.get('title','')}</b>\n"
@@ -143,7 +155,10 @@ def fmt(ad) -> str:
         + (f"🤝 Комиссия: {com}\n" if com else "")
         + (f"👤 {seller}\n" if seller else "")
         + f"{contact}\n"
-        + f"🕒 {ad.get('created_time','')[:16].replace('T',' ')}\n"
+        + f"🕒 создано: {ad.get('created_time','')[:16].replace('T',' ')}"
+        + (f" | поднято: {ad['last_refresh_time'][:16].replace('T',' ')}"
+           if ad.get("last_refresh_time", "")[:16] not in ("", ad.get("created_time", "")[:16]) else "")
+        + "\n"
         f"{ad.get('url','')}"
     )
 
