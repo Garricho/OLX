@@ -27,7 +27,8 @@ if _env.exists():
 
 # ================== НАСТРОЙКИ ==================
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-CHAT_ID = os.getenv("CHAT_ID", "")
+CHAT_ID = os.getenv("CHAT_ID", "")              # личка: статус, /status, ошибки
+CHANNEL_ID = os.getenv("CHANNEL_ID", "@kvartira_arneda")  # куда постить объявления ("" = в личку)
 
 CATEGORY_ID = 2155        # аренда квартир (долгосрочно). 2156 — второй подтип аренды (вероятно посуточно)
 CITY_ID = 4               # Ташкент
@@ -192,13 +193,14 @@ def fmt(ad) -> str:
     )
 
 
-def send(text):
-    if not BOT_TOKEN or not CHAT_ID:
+def send(text, chat=None):
+    chat = chat or CHAT_ID
+    if not BOT_TOKEN or not chat:
         print(text, "\n")
         return
     r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML",
+        json={"chat_id": chat, "text": text, "parse_mode": "HTML",
               "disable_web_page_preview": False},
         timeout=20,
     )
@@ -245,7 +247,7 @@ def main():
     if not BOT_TOKEN or not CHAT_ID:
         log("[warn] BOT_TOKEN/CHAT_ID пустые — нет файла .env, объявления будут только в консоли")
     else:
-        send(f"✅ OLX снайпер запущен, слежу за Юнусабадом (интервал {INTERVAL} с)\n/status — состояние")
+        send(f"✅ OLX снайпер запущен, слежу за Юнусабадом (интервал {INTERVAL} с)\nПощу в: {CHANNEL_ID or 'личку'}\n/status — состояние")
         threading.Thread(target=commands_loop, daemon=True).start()
     while True:
         try:
@@ -261,7 +263,7 @@ def main():
                 if why:
                     log(f"[skip] {why}: {ad.get('title','')[:60]}")
                     continue
-                send(fmt(ad))
+                send(fmt(ad), CHANNEL_ID or CHAT_ID)
                 new += 1
                 STATS["sent"] += 1
                 time.sleep(1)
