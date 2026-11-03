@@ -36,7 +36,8 @@ DISTRICT_ID = 25          # Юнусабадский район
 PRICE_MIN = None          # например 300  (в валюте объявления)
 PRICE_MAX = None          # например 700
 ROOMS = None              # например {1, 2} или None = любые
-MAX_AGE_HOURS = 24        # старее — не слать (отсекает старые поднятые объявления). None = выкл
+MAX_AGE_HOURS = 24        # старее этого = «поднятое», а не новое
+SEND_BUMPED = True        # True — поднятые тоже слать с пометкой ♻️, False — пропускать
 KEYWORDS_EXCLUDE = ["офис", "ofis", "нежил", "noturar"]  # отсекать мусор по заголовку
 
 INTERVAL = 20             # сек между проверками (меньше 10 — риск бана от OLX)
@@ -100,9 +101,13 @@ def age_hours(ad):
         return 0
 
 
+def is_bumped(ad) -> bool:
+    return MAX_AGE_HOURS is not None and age_hours(ad) > MAX_AGE_HOURS
+
+
 def skip_reason(ad):
     """None = подходит, иначе причина пропуска."""
-    if MAX_AGE_HOURS is not None and age_hours(ad) > MAX_AGE_HOURS:
+    if not SEND_BUMPED and is_bumped(ad):
         return f"старое ({ad.get('created_time','')[:10]}, поднято)"
     title = ad.get("title", "").lower()
     for k in KEYWORDS_EXCLUDE:
@@ -153,8 +158,14 @@ def fmt(ad) -> str:
     seller = (ad.get("contact") or {}).get("name") or (ad.get("user") or {}).get("name") or ""
     phones = find_phones(" ".join([ad.get("title", ""), ad.get("description", ""), seller]))
     contact = ("📞 " + ", ".join(phones)) if phones else "📞 номер скрыт — кнопка «Показать телефон» на OLX"
+    if is_bumped(ad):
+        days = int(age_hours(ad) // 24)
+        head = f"♻️ <b>ПОДНЯТОЕ</b> — висит уже {days} дн., не новое\n"
+    else:
+        head = "🆕 <b>НОВОЕ</b>\n"
     return (
-        f"🏠 <b>{ad.get('title','')}</b>\n"
+        head
+        + f"🏠 <b>{ad.get('title','')}</b>\n"
         f"💰 {price}\n"
         f"🚪 {rooms} | 📐 {area} | 🏢 {floor}/{floors}\n"
         + (f"🛋 {furn}\n" if furn else "")
