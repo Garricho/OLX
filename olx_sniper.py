@@ -9,6 +9,7 @@ import json
 import re
 import sys
 import os
+import random
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -40,8 +41,8 @@ MAX_AGE_HOURS = 24        # старее этого = «поднятое», а �
 SEND_BUMPED = True        # True — поднятые тоже слать с пометкой ♻️, False — пропускать
 KEYWORDS_EXCLUDE = ["офис", "ofis", "нежил", "noturar"]  # отсекать мусор по заголовку
 
-INTERVAL = 20             # сек между проверками (меньше 10 — риск бана от OLX)
-PAGES = 2                 # сколько страниц по 40 смотреть за проход
+INTERVAL = 4              # базовая пауза, сек (+ случайно 0–2 с). Меньше 3 не ставить
+PAGES = 1                 # 1 страница (40 свежих) — хватает при частых проверках
 SEEN_FILE = Path(__file__).with_name("olx_seen.json")
 # ===============================================
 
@@ -78,15 +79,25 @@ def param(ad, key):
     return {}
 
 
+SESSION = requests.Session()   # одно keep-alive соединение вместо нового на каждый запрос
+SESSION.headers.update(HEADERS)
+
+
+class RateLimited(Exception):
+    pass
+
+
 def fetch_ads():
     ads = []
     for page in range(PAGES):
-        r = requests.get(API, headers=HEADERS, timeout=20, params={
+        r = SESSION.get(API, timeout=20, params={
             "offset": page * 40, "limit": 40,
             "category_id": CATEGORY_ID, "region_id": REGION_ID,
             "city_id": CITY_ID, "district_id": DISTRICT_ID,
             "sort_by": "created_at:desc",
         })
+        if r.status_code in (403, 429):
+            raise RateLimited(r.status_code)
         if r.status_code != 200:
             raise RuntimeError(f"OLX ответил {r.status_code} (возможно бан за частые запросы)")
         ads += r.json().get("data", [])
@@ -200,6 +211,7 @@ STATS = {"seen": 0, "sent": 0, "last_check": "—", "started": time.strftime("%d
 def commands_loop():
     """Отвечает на /start и /status в Telegram (long polling)."""
     offset = None
+    backoff = 0
     while True:
         try:
             r = requests.get(
@@ -258,11 +270,21 @@ def main():
             if first_run:
                 log(f"[init] запомнил {len(seen)} текущих объявлений, жду новые")
                 first_run = False
-            else:
+            elif new:
                 log(f"[check] новых: {new}, всего видел: {len(seen)}")
+            checks = STATS.get("checks", 0) + 1
+            STATS["checks"] = checks
+            if checks % 50 == 0:
+                log(f"[alive] проверок: {checks}, всего видел: {len(seen)}")
+            backoff = 0
+        except RateLimited as e:
+            backoff = min(backoff * 2 or 60, 900)
+            log(f"[ratelimit] OLX ответил {e}, пауза {backoff} с")
+            time.sleep(backoff)
+            continue
         except Exception as e:
             log("[err]", e)
-        time.sleep(INTERVAL)
+        time.sleep(INTERVAL + random.uniform(0, 2))
 
 
 if __name__ == "__main__":
