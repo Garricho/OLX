@@ -100,25 +100,31 @@ def age_hours(ad):
         return 0
 
 
-def passes(ad) -> bool:
+def skip_reason(ad):
+    """None = подходит, иначе причина пропуска."""
     if MAX_AGE_HOURS is not None and age_hours(ad) > MAX_AGE_HOURS:
-        return False
+        return f"старое ({ad.get('created_time','')[:10]}, поднято)"
     title = ad.get("title", "").lower()
-    if any(k in title for k in KEYWORDS_EXCLUDE):
-        return False
+    for k in KEYWORDS_EXCLUDE:
+        if k in title:
+            return f"стоп-слово «{k}»"
     price = param(ad, "price").get("value")
     if PRICE_MIN is not None and (price is None or price < PRICE_MIN):
-        return False
+        return f"цена {price} < {PRICE_MIN}"
     if PRICE_MAX is not None and (price is None or price > PRICE_MAX):
-        return False
+        return f"цена {price} > {PRICE_MAX}"
     if ROOMS:
         try:
             rooms = int(param(ad, "number_of_rooms").get("key", 0))
         except (TypeError, ValueError):
             rooms = 0
         if rooms not in ROOMS:
-            return False
-    return True
+            return f"комнат {rooms}"
+    return None
+
+
+def passes(ad) -> bool:
+    return skip_reason(ad) is None
 
 
 PHONE_RE = re.compile(r"(?:\+?998[\s\-]?)?\(?\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}")
@@ -225,7 +231,11 @@ def main():
                 if aid in seen:
                     continue
                 seen.add(aid)
-                if first_run or not passes(ad):
+                if first_run:
+                    continue
+                why = skip_reason(ad)
+                if why:
+                    log(f"[skip] {why}: {ad.get('title','')[:60]}")
                     continue
                 send(fmt(ad))
                 new += 1
