@@ -41,7 +41,8 @@ MAX_AGE_HOURS = 24        # старее этого = «поднятое», а �
 SEND_BUMPED = True        # True — поднятые тоже слать с пометкой ♻️, False — пропускать
 KEYWORDS_EXCLUDE = ["офис", "ofis", "нежил", "noturar"]  # отсекать мусор по заголовку
 
-INTERVAL = 4              # базовая пауза, сек (+ случайно 0–2 с). Меньше 3 не ставить
+INTERVAL = 1              # пауза между запросами, сек
+JITTER = 0.3              # случайная добавка 0..JITTER сек
 PAGES = 1                 # 1 страница (40 свежих) — хватает при частых проверках
 SEEN_FILE = Path(__file__).with_name("olx_seen.json")
 # ===============================================
@@ -284,7 +285,7 @@ def main():
             continue
         except Exception as e:
             log("[err]", e)
-        time.sleep(INTERVAL + random.uniform(0, 2))
+        time.sleep(INTERVAL + random.uniform(0, JITTER))
 
 
 if __name__ == "__main__":
