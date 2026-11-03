@@ -8,6 +8,7 @@ pip install -r requirements.txt
 import json
 import sys
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -140,6 +141,37 @@ def send(text):
         log("[tg err]", r.status_code, r.text[:200])
 
 
+STATS = {"seen": 0, "sent": 0, "last_check": "—", "started": time.strftime("%d.%m %H:%M")}
+
+
+def commands_loop():
+    """Отвечает на /start и /status в Telegram (long polling)."""
+    offset = None
+    while True:
+        try:
+            r = requests.get(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+                params={"timeout": 30, "offset": offset}, timeout=40,
+            ).json()
+            for u in r.get("result", []):
+                offset = u["update_id"] + 1
+                msg = u.get("message") or {}
+                if str(msg.get("chat", {}).get("id")) != str(CHAT_ID):
+                    continue
+                if (msg.get("text") or "").split()[0:1] in (["/start"], ["/status"]):
+                    send(
+                        "✅ Снайпер работает\n"
+                        f"Запущен: {STATS['started']}\n"
+                        f"Последняя проверка: {STATS['last_check']}\n"
+                        f"Объявлений в базе: {STATS['seen']}\n"
+                        f"Отправлено новых: {STATS['sent']}\n"
+                        f"Интервал: {INTERVAL} с"
+                    )
+        except Exception as e:
+            log("[cmd err]", e)
+            time.sleep(5)
+
+
 def main():
     seen = load_seen()
     first_run = not seen
@@ -147,7 +179,8 @@ def main():
     if not BOT_TOKEN or not CHAT_ID:
         log("[warn] BOT_TOKEN/CHAT_ID пустые — нет файла .env, объявления будут только в консоли")
     else:
-        send(f"✅ OLX снайпер запущен, слежу за Юнусабадом (интервал {INTERVAL} с)")
+        send(f"✅ OLX снайпер запущен, слежу за Юнусабадом (интервал {INTERVAL} с)\n/status — состояние")
+        threading.Thread(target=commands_loop, daemon=True).start()
     while True:
         try:
             new = 0
@@ -160,8 +193,11 @@ def main():
                     continue
                 send(fmt(ad))
                 new += 1
+                STATS["sent"] += 1
                 time.sleep(1)
             save_seen(seen)
+            STATS["seen"] = len(seen)
+            STATS["last_check"] = time.strftime("%H:%M:%S")
             if first_run:
                 log(f"[init] запомнил {len(seen)} текущих объявлений, жду новые")
                 first_run = False
