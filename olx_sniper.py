@@ -6,6 +6,7 @@ pip install -r requirements.txt
 Токен и chat_id кладутся в файл .env (см. .env.example).
 """
 import json
+import re
 import sys
 import os
 import threading
@@ -108,6 +109,21 @@ def passes(ad) -> bool:
     return True
 
 
+PHONE_RE = re.compile(r"(?:\+?998[\s\-]?)?\(?\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}")
+
+
+def find_phones(text: str):
+    """Номера из текста объявления -> ['+998901234567', ...]"""
+    out = []
+    for m in PHONE_RE.findall(text or ""):
+        d = re.sub(r"\D", "", m)
+        if len(d) == 9:
+            d = "998" + d
+        if len(d) == 12 and d.startswith("998") and d not in out:
+            out.append(d)
+    return ["+" + d for d in out]
+
+
 def fmt(ad) -> str:
     price = param(ad, "price").get("label", "—")
     rooms = param(ad, "number_of_rooms").get("label", "?")
@@ -116,12 +132,17 @@ def fmt(ad) -> str:
     floors = param(ad, "total_floors").get("label", "?")
     furn = param(ad, "furnished").get("label", "")
     com = param(ad, "comission").get("label", "")
+    phones = find_phones(ad.get("title", "") + " " + ad.get("description", ""))
+    seller = (ad.get("contact") or {}).get("name") or (ad.get("user") or {}).get("name") or ""
+    contact = ("📞 " + ", ".join(phones)) if phones else "📞 номер скрыт — кнопка «Показать телефон» на OLX"
     return (
         f"🏠 <b>{ad.get('title','')}</b>\n"
         f"💰 {price}\n"
         f"🚪 {rooms} | 📐 {area} | 🏢 {floor}/{floors}\n"
         + (f"🛋 {furn}\n" if furn else "")
         + (f"🤝 Комиссия: {com}\n" if com else "")
+        + (f"👤 {seller}\n" if seller else "")
+        + f"{contact}\n"
         + f"🕒 {ad.get('created_time','')[:16].replace('T',' ')}\n"
         f"{ad.get('url','')}"
     )
