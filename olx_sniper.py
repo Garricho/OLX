@@ -6,6 +6,7 @@ pip install -r requirements.txt
 Токен и chat_id кладутся в файл .env (см. .env.example).
 """
 import json
+import sys
 import os
 import time
 from pathlib import Path
@@ -34,10 +35,16 @@ PRICE_MAX = None          # например 700
 ROOMS = None              # например {1, 2} или None = любые
 KEYWORDS_EXCLUDE = ["офис", "ofis", "нежил", "noturar"]  # отсекать мусор по заголовку
 
-INTERVAL = 60             # сек между проверками
+INTERVAL = 20             # сек между проверками (меньше 10 — риск бана от OLX)
 PAGES = 2                 # сколько страниц по 40 смотреть за проход
 SEEN_FILE = Path(__file__).with_name("olx_seen.json")
 # ===============================================
+
+sys.stdout.reconfigure(line_buffering=True)  # лог сразу, даже при выводе в файл
+
+
+def log(*a):
+    print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 API = "https://www.olx.uz/api/v1/offers/"
 HEADERS = {
@@ -75,7 +82,8 @@ def fetch_ads():
             "city_id": CITY_ID, "district_id": DISTRICT_ID,
             "sort_by": "created_at:desc",
         })
-        r.raise_for_status()
+        if r.status_code != 200:
+            raise RuntimeError(f"OLX ответил {r.status_code} (возможно бан за частые запросы)")
         ads += r.json().get("data", [])
     return ads
 
@@ -122,18 +130,20 @@ def send(text):
     if not BOT_TOKEN or not CHAT_ID:
         print(text, "\n")
         return
-    requests.post(
+    r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML",
               "disable_web_page_preview": False},
         timeout=20,
     )
+    if not r.ok:
+        log("[tg err]", r.status_code, r.text[:200])
 
 
 def main():
     seen = load_seen()
     first_run = not seen
-    print(f"[start] seen={len(seen)} first_run={first_run}")
+    log(f"[start] seen={len(seen)} first_run={first_run}")
     while True:
         try:
             new = 0
@@ -149,12 +159,12 @@ def main():
                 time.sleep(1)
             save_seen(seen)
             if first_run:
-                print(f"[init] запомнил {len(seen)} текущих объявлений, жду новые")
+                log(f"[init] запомнил {len(seen)} текущих объявлений, жду новые")
                 first_run = False
-            elif new:
-                print(f"[+] отправлено {new}")
+            else:
+                log(f"[check] новых: {new}, всего видел: {len(seen)}")
         except Exception as e:
-            print("[err]", e)
+            log("[err]", e)
         time.sleep(INTERVAL)
 
 
