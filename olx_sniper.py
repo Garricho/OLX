@@ -248,6 +248,8 @@ def main():
         log("[warn] BOT_TOKEN/CHAT_ID пустые — нет файла .env, объявления будут только в консоли")
     else:
         send(f"✅ OLX снайпер запущен, слежу за Юнусабадом (интервал {INTERVAL} с)\nПощу в: {CHANNEL_ID or 'личку'}\n/status — состояние")
+        if CHANNEL_ID:
+            send(f"✅ Снайпер запущен — новые объявления аренды в Юнусабаде будут здесь", CHANNEL_ID)
         threading.Thread(target=commands_loop, daemon=True).start()
     while True:
         try:
