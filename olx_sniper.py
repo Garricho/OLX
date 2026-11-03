@@ -144,6 +144,10 @@ def main():
     seen = load_seen()
     first_run = not seen
     log(f"[start] seen={len(seen)} first_run={first_run}")
+    if not BOT_TOKEN or not CHAT_ID:
+        log("[warn] BOT_TOKEN/CHAT_ID пустые — нет файла .env, объявления будут только в консоли")
+    else:
+        send(f"✅ OLX снайпер запущен, слежу за Юнусабадом (интервал {INTERVAL} с)")
     while True:
         try:
             new = 0
