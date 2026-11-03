@@ -46,6 +46,8 @@ INTERVAL = 1              # пауза между запросами, сек
 JITTER = 0.3              # случайная добавка 0..JITTER сек
 PAGES = 1                 # 1 страница (40 свежих) — хватает при частых проверках
 SEEN_FILE = Path(__file__).with_name("olx_seen.json")
+FETCH_PHONE = True        # если номера нет в тексте — «нажать показать» (запрос телефона у OLX)
+OLX_TOKEN = os.getenv("OLX_TOKEN", "")  # необязательно: Bearer-токен залогиненного аккаунта OLX
 # ===============================================
 
 sys.stdout.reconfigure(line_buffering=True)  # лог сразу, даже при выводе в файл
@@ -160,6 +162,30 @@ def find_phones(text: str):
     return ["+" + d for d in out]
 
 
+def fetch_phones_olx(ad):
+    """То же, что кнопка «показать»: GET /offers/{id}/limited-phones/ -> ['+998...']"""
+    if not FETCH_PHONE or (ad.get("contact") or {}).get("phone") is False:
+        return []
+    h = {"Referer": ad.get("url", "https://www.olx.uz/")}
+    if OLX_TOKEN:
+        h["Authorization"] = "Bearer " + OLX_TOKEN
+    for ep in ("limited-phones", "phones"):
+        try:
+            r = SESSION.get(f"{API}{ad['id']}/{ep}/", headers=h, timeout=15)
+        except Exception as e:
+            log("[phone err]", e)
+            return []
+        if r.status_code == 200:
+            raw = (r.json().get("data") or {}).get("phones") or []
+            return find_phones(" ".join(map(str, raw))) or [str(x) for x in raw]
+        if r.status_code == 404:
+            continue
+        log(f"[phone] {ep} -> {r.status_code} {r.text[:150]}"
+            + (" (нужен OLX_TOKEN в .env)" if r.status_code in (400, 401, 403) and not OLX_TOKEN else ""))
+        return []
+    return []
+
+
 def fmt(ad) -> str:
     price = param(ad, "price").get("label", "—")
     rooms = param(ad, "number_of_rooms").get("label", "?")
@@ -170,6 +196,8 @@ def fmt(ad) -> str:
     com = param(ad, "comission").get("label", "")
     seller = (ad.get("contact") or {}).get("name") or (ad.get("user") or {}).get("name") or ""
     phones = find_phones(" ".join([ad.get("title", ""), ad.get("description", ""), seller]))
+    if not phones:                      # продавец есть, номера в тексте нет -> жмём «показать»
+        phones = fetch_phones_olx(ad)
     contact = ("📞 " + ", ".join(phones)) if phones else "📞 номер скрыт — кнопка «Показать телефон» на OLX"
     if is_bumped(ad):
         days = int(age_hours(ad) // 24)
