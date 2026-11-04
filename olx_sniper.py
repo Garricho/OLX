@@ -48,6 +48,8 @@ PAGES = 1                 # 1 страница (40 свежих) — хвата�
 SEEN_FILE = Path(__file__).with_name("olx_seen.json")
 FETCH_PHONE = True        # если номера нет в тексте — «нажать показать» (запрос телефона у OLX)
 OLX_TOKEN = os.getenv("OLX_TOKEN", "")  # необязательно: Bearer-токен залогиненного аккаунта OLX
+OLX_PROXY = os.getenv("OLX_PROXY", "")  # необязательно: прокси ТОЛЬКО для OLX, напр. http://user:pass@host:port
+                                        # Telegram идёт напрямую — токен бота через прокси не утекает
 # ===============================================
 
 sys.stdout.reconfigure(line_buffering=True)  # лог сразу, даже при выводе в файл
@@ -85,6 +87,8 @@ def param(ad, key):
 
 SESSION = requests.Session()   # одно keep-alive соединение вместо нового на каждый запрос
 SESSION.headers.update(HEADERS)
+if OLX_PROXY:
+    SESSION.proxies = {"http": OLX_PROXY, "https": OLX_PROXY}
 
 
 class RateLimited(Exception):
@@ -101,6 +105,8 @@ def fetch_ads():
             "sort_by": "created_at:desc",
         })
         if r.status_code in (403, 429):
+            log(f"[http {r.status_code}] cf-ray={r.headers.get('cf-ray','-')} "
+                f"server={r.headers.get('server','-')} body={r.text[:200]!r}")
             raise RateLimited(r.status_code)
         if r.status_code != 200:
             raise RuntimeError(f"OLX ответил {r.status_code} (возможно бан за частые запросы)")
@@ -272,6 +278,15 @@ def main():
     seen = load_seen()
     first_run = not seen
     log(f"[start] seen={len(seen)} first_run={first_run}")
+    if OLX_PROXY:
+        host = OLX_PROXY.split("@")[-1]
+        try:
+            ip = SESSION.get("https://api.ipify.org", timeout=15).text.strip()
+            log(f"[proxy] OLX через {host}, внешний IP: {ip}")
+        except Exception as e:
+            log(f"[proxy] {host} НЕ отвечает: {e}")
+    else:
+        log("[proxy] выключен (OLX_PROXY пуст) — запросы с IP сервера")
     if not BOT_TOKEN or not CHAT_ID:
         log("[warn] BOT_TOKEN/CHAT_ID пустые — нет файла .env, объявления будут только в консоли")
     else:
@@ -279,6 +294,7 @@ def main():
         if CHANNEL_ID:
             send(f"✅ Снайпер запущен — новые объявления аренды в Юнусабаде будут здесь", CHANNEL_ID)
         threading.Thread(target=commands_loop, daemon=True).start()
+    backoff = 0
     while True:
         try:
             new = 0

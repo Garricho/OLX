@@ -22,3 +22,17 @@ screen -dmS olxsniper python3 olx_sniper.py
 - `CITY_ID=4` Ташкент, `DISTRICT_ID=25` Юнусабадский район
 - `PRICE_MIN` / `PRICE_MAX`, `ROOMS`, `KEYWORDS_EXCLUDE`
 - `INTERVAL` — пауза между проверками, сек
+
+## Запуск на Windows
+```powershell
+git clone https://github.com/Garricho/OLX.git olx
+cd olx
+copy .env.example .env   # вписать BOT_TOKEN и CHAT_ID
+```
+Дальше просто двойной клик по `start.bat` — он сам создаст `.venv`, поставит
+зависимости и запустит бота. Закрывать окно = остановить бота.
+
+Автозапуск при включении ПК: `Win+R` → `shell:startup` → положить туда ярлык на `start.bat`.
+
+**Важно:** не держать бота запущенным одновременно на Linux и на Windows —
+у каждой машины свой `olx_seen.json`, объявления придут в Telegram дважды.
